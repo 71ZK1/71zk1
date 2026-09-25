@@ -75,6 +75,4 @@ scans/
 - Nuclei's severity filter defaults to `low,medium,high,critical` — edit the `SEVERITY` variable in the script if you want informational findings too.
 - This is a recon starting point, not a replacement for manual testing — treat the nuclei output as a lead list, not a final report.
 
-## License
 
-MIT
