@@ -98,6 +98,7 @@ if [[ "$MISSING" -eq 0 ]]; then
     echo
     ok "All dependencies installed successfully."
     echo "You can now run: ./71zk1.sh -d example.com"
+    echo "refresh the terminal or run : source ~/.bashrc or if you use zsh : source ~/.zshrc"
 else
     echo
     warn "Some tools are missing from PATH. Try restarting your terminal, then re-run this script."
