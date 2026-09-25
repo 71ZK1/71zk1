@@ -19,24 +19,27 @@ Each run is saved into its own timestamped folder so nothing overwrites previous
 ## Requirements
 
 - Bash (Linux/macOS/WSL)
+- Go (installed automatically by `install.sh` if missing)
 - [subfinder](https://github.com/projectdiscovery/subfinder)
 - [httpx](https://github.com/projectdiscovery/httpx)
 - [nuclei](https://github.com/projectdiscovery/nuclei)
 
-Install all three (requires Go):
+## Setup
+
+Clone the repo and run the installer once — it checks for Go, installs subfinder/httpx/nuclei if they're missing, adds them to your `PATH`, and pulls the latest nuclei templates:
 
 ```bash
-go install -v github.com/projectdiscovery/subfinder/v2/cmd/subfinder@latest
-go install -v github.com/projectdiscovery/httpx/cmd/httpx@latest
-go install -v github.com/projectdiscovery/nuclei/v3/cmd/nuclei@latest
+git clone https://github.com/<your-username>/71zk1.git
+cd 71zk1
+chmod +x install.sh 71zk1.sh
+./install.sh
 ```
 
-Make sure `$GOPATH/bin` (usually `~/go/bin`) is in your `PATH`.
+If `install.sh` adds anything to your `PATH`, restart your terminal (or run `source ~/.bashrc` / `source ~/.zshrc`) before continuing.
 
 ## Usage
 
 ```bash
-chmod +x 71zk1.sh
 ./71zk1.sh -d example.com
 ```
 
@@ -75,4 +78,6 @@ scans/
 - Nuclei's severity filter defaults to `low,medium,high,critical` — edit the `SEVERITY` variable in the script if you want informational findings too.
 - This is a recon starting point, not a replacement for manual testing — treat the nuclei output as a lead list, not a final report.
 
+## License
 
+MIT
