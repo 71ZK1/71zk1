@@ -10,6 +10,14 @@
 #   go install -v github.com/projectdiscovery/subfinder/v2/cmd/subfinder@latest
 #   go install -v github.com/projectdiscovery/httpx/cmd/httpx@latest
 #   go install -v github.com/projectdiscovery/nuclei/v3/cmd/nuclei@latest
+#
+# NOTE: There is also a Python package called "httpx" (an HTTP client
+# library) that installs its own unrelated "httpx" command. If it's
+# installed and appears earlier in your PATH, it silently shadows
+# ProjectDiscovery's httpx and breaks this script with errors like:
+#   "Usage: httpx [OPTIONS] URL ... Error: No such option: -l"
+# To avoid that, this script resolves the Go-installed binaries by
+# their known install path first, instead of blindly trusting PATH.
 
 set -euo pipefail
 
@@ -29,15 +37,14 @@ NC='\033[0m'
 
 banner() {
 cat << "EOF"
-█████████║    ██╗ ███████╗██╗  ██╗ ██╗
-    ╚══██║  ████║ ╚══███╔╝██║ ██╔╝███║
-       ██║   ╚██║   ███╔╝ █████╔╝ ╚██║
-       ██║    ██║  ███╔╝  ██╔═██╗  ██║
-       ██║    ██║ ███████╗██║  ██╗ ██║
-       ╚═╝    ╚═╝ ╚══════╝╚═╝  ╚═╝ ╚═╝
+ ████████║   ██║ ███████╗██╗  ██╗ ██╗
+    ╚══██║  ███║ ╚══███╔╝██║ ██╔╝███║
+       ██║   ██║   ███╔╝ █████╔╝ ╚██║
+       ██║   ██║  ███╔╝  ██╔═██╗  ██║
+       ██║   ██║ ███████╗██║  ██╗ ██║
+       ╚═╝   ╚═╝ ╚══════╝╚═╝  ╚═╝ ╚═╝
 
           recon pipeline
-        7 1 Z K 1 — recon pipeline
 EOF
 }
 
@@ -57,18 +64,53 @@ ok()  { echo -e "${GREEN}[+]${NC} $1"; }
 warn(){ echo -e "${YELLOW}[!]${NC} $1"; }
 err() { echo -e "${RED}[-]${NC} $1"; }
 
-check_deps() {
-    local missing=0
-    for bin in subfinder httpx nuclei; do
-        if ! command -v "$bin" &> /dev/null; then
-            err "$bin not found in PATH."
-            missing=1
-        fi
-    done
-    if [[ "$missing" -eq 1 ]]; then
-        err "Install the missing tool(s) above before running 71ZK1. See the header of this script for install commands."
+# ---------- Resolve real ProjectDiscovery binaries ----------
+# Prefer the Go install location so we never accidentally call a
+# same-named tool from somewhere else on PATH (e.g. Python's httpx).
+GOBIN_DIR="$(go env GOPATH 2>/dev/null)/bin"
+[[ -z "${GOBIN_DIR// }" || "$GOBIN_DIR" == "/bin" ]] && GOBIN_DIR="$HOME/go/bin"
+
+resolve_bin() {
+    local name="$1"
+    if [[ -x "${GOBIN_DIR}/${name}" ]]; then
+        echo "${GOBIN_DIR}/${name}"
+    elif command -v "$name" &> /dev/null; then
+        command -v "$name"
+    else
+        echo ""
+    fi
+}
+
+SUBFINDER_BIN="$(resolve_bin subfinder)"
+HTTPX_BIN="$(resolve_bin httpx)"
+NUCLEI_BIN="$(resolve_bin nuclei)"
+
+verify_httpx() {
+    # ProjectDiscovery's httpx supports -silent; the Python "httpx" CLI does not.
+    # This catches the shadowing case even if resolve_bin found *a* httpx.
+    if [[ -n "$HTTPX_BIN" ]] && ! "$HTTPX_BIN" -h 2>&1 | grep -q "silent"; then
+        err "Found a 'httpx' at $HTTPX_BIN, but it doesn't look like ProjectDiscovery's httpx."
+        err "This is likely the Python 'httpx' HTTP client package shadowing the real tool."
+        warn "Fix options:"
+        warn "  1) pip uninstall httpx   (if you don't need the Python library globally)"
+        warn "  2) Or run: export PATH=\"${GOBIN_DIR}:\$PATH\"   before running this script"
+        warn "  3) Or reinstall: go install -v github.com/projectdiscovery/httpx/cmd/httpx@latest"
         exit 1
     fi
+}
+
+check_deps() {
+    local missing=0
+    [[ -z "$SUBFINDER_BIN" ]] && { err "subfinder not found."; missing=1; }
+    [[ -z "$HTTPX_BIN" ]] && { err "httpx not found."; missing=1; }
+    [[ -z "$NUCLEI_BIN" ]] && { err "nuclei not found."; missing=1; }
+
+    if [[ "$missing" -eq 1 ]]; then
+        err "Install the missing tool(s) above before running 71ZK1. Run ./install.sh, or see the header of this script for install commands."
+        exit 1
+    fi
+
+    verify_httpx
 }
 
 # ---------- Parse args ----------
@@ -88,6 +130,12 @@ if [[ -z "$DOMAIN" ]]; then
     usage
 fi
 
+# Strip an accidentally-pasted scheme/path so subfinder gets a bare domain,
+# e.g. "https://example.com/" -> "example.com"
+DOMAIN="${DOMAIN#http://}"
+DOMAIN="${DOMAIN#https://}"
+DOMAIN="${DOMAIN%%/*}"
+
 banner
 check_deps
 
@@ -102,11 +150,14 @@ SUMMARY_FILE="${RUNDIR}/summary.txt"
 
 log "Target: $DOMAIN"
 log "Output: $RUNDIR"
+log "Using subfinder: $SUBFINDER_BIN"
+log "Using httpx:     $HTTPX_BIN"
+log "Using nuclei:    $NUCLEI_BIN"
 echo
 
 # ---------- Stage 1: Subdomain enumeration ----------
 log "Stage 1/3 — Enumerating subdomains with subfinder..."
-subfinder -d "$DOMAIN" -silent -o "$SUBS_FILE"
+"$SUBFINDER_BIN" -d "$DOMAIN" -silent -o "$SUBS_FILE"
 SUB_COUNT=$(wc -l < "$SUBS_FILE" | tr -d ' ')
 ok "Found $SUB_COUNT subdomains -> $SUBS_FILE"
 echo
@@ -118,7 +169,7 @@ fi
 
 # ---------- Stage 2: Probe for live hosts ----------
 log "Stage 2/3 — Probing for live hosts with httpx..."
-httpx -l "$SUBS_FILE" -silent -status-code -title -tech-detect -o "$LIVE_FILE"
+"$HTTPX_BIN" -l "$SUBS_FILE" -silent -status-code -title -tech-detect -o "$LIVE_FILE"
 LIVE_COUNT=$(wc -l < "$LIVE_FILE" | tr -d ' ')
 ok "Found $LIVE_COUNT live hosts -> $LIVE_FILE"
 echo
@@ -129,16 +180,16 @@ if [[ "$LIVE_COUNT" -eq 0 ]]; then
 fi
 
 # httpx above writes extra columns (status/title/tech) after the URL,
-# nuclei needs bare URLs, so re-probe cleanly for just the URL list.
+# nuclei needs bare URLs, so extract just the URL column.
 LIVE_URLS_FILE="${RUNDIR}/live_urls.txt"
 awk '{print $1}' "$LIVE_FILE" > "$LIVE_URLS_FILE"
 
 # ---------- Stage 3: Vulnerability scanning ----------
 log "Stage 3/3 — Scanning live hosts with nuclei..."
 if [[ -n "$TEMPLATES" ]]; then
-    nuclei -l "$LIVE_URLS_FILE" -t "$TEMPLATES" -severity "$SEVERITY" -rl "$RATE" -silent -o "$NUCLEI_FILE"
+    "$NUCLEI_BIN" -l "$LIVE_URLS_FILE" -t "$TEMPLATES" -severity "$SEVERITY" -rl "$RATE" -silent -o "$NUCLEI_FILE"
 else
-    nuclei -l "$LIVE_URLS_FILE" -severity "$SEVERITY" -rl "$RATE" -silent -o "$NUCLEI_FILE"
+    "$NUCLEI_BIN" -l "$LIVE_URLS_FILE" -severity "$SEVERITY" -rl "$RATE" -silent -o "$NUCLEI_FILE"
 fi
 FINDING_COUNT=$(wc -l < "$NUCLEI_FILE" 2>/dev/null | tr -d ' ' || echo 0)
 ok "Nuclei finished — $FINDING_COUNT findings -> $NUCLEI_FILE"
