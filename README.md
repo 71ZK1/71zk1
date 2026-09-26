@@ -72,6 +72,20 @@ scans/
         └── summary.txt
 ```
 
+## Troubleshooting
+
+**`httpx` error: `Usage: httpx [OPTIONS] URL ... Error: No such option: -l`**
+
+This means a different tool is shadowing the real one. There is also a Python package called `httpx` (an unrelated HTTP client library) that installs its own `httpx` command. If it comes before ProjectDiscovery's `httpx` in your `PATH`, the script would call the wrong one.
+
+`71zk1.sh` resolves the ProjectDiscovery binaries directly by their Go install path, so this is handled automatically — but if you still hit it:
+
+```bash
+pip uninstall httpx        # if you don't need the Python library globally
+# or, force the correct one first in this shell session:
+export PATH="$(go env GOPATH)/bin:$PATH"
+```
+
 ## Notes
 
 - Only run this against domains you are authorized to test (bug bounty programs you're enrolled in, or your own infrastructure).
