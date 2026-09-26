@@ -77,7 +77,21 @@ install_tool "httpx"     "github.com/projectdiscovery/httpx/cmd/httpx"
 install_tool "nuclei"    "github.com/projectdiscovery/nuclei/v3/cmd/nuclei"
 echo
 
-# ---------- Step 4: Pull latest nuclei templates ----------
+# ---------- Step 4: Check for the Python "httpx" conflict ----------
+# ProjectDiscovery's httpx and the Python "httpx" HTTP client package
+# both install a command literally called "httpx". If the Python one
+# is earlier in PATH, it silently shadows the real recon tool.
+GOBIN_DIR="$(go env GOPATH)/bin"
+if command -v pip &> /dev/null && pip show httpx &> /dev/null; then
+    warn "Detected the Python 'httpx' package installed via pip."
+    warn "It installs its own 'httpx' command that can shadow ProjectDiscovery's httpx."
+    warn "71zk1.sh resolves the correct binary automatically, but if you ever call"
+    warn "'httpx' directly yourself, make sure this comes first in PATH:"
+    warn "  $GOBIN_DIR"
+fi
+echo
+
+# ---------- Step 5: Pull latest nuclei templates ----------
 if command -v nuclei &> /dev/null; then
     log "Updating nuclei templates..."
     nuclei -update-templates -silent || true
@@ -85,7 +99,7 @@ if command -v nuclei &> /dev/null; then
 fi
 echo
 
-# ---------- Step 5: Final check ----------
+# ---------- Step 6: Final check ----------
 MISSING=0
 for bin in subfinder httpx nuclei; do
     if ! command -v "$bin" &> /dev/null; then
@@ -98,7 +112,6 @@ if [[ "$MISSING" -eq 0 ]]; then
     echo
     ok "All dependencies installed successfully."
     echo "You can now run: ./71zk1.sh -d example.com"
-    echo "Take a new terminal or run : source ~/.bashrc or if you use zsh : source ~/.zshrc"
 else
     echo
     warn "Some tools are missing from PATH. Try restarting your terminal, then re-run this script."
